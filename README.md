@@ -4,6 +4,6 @@ Yet another NES emulator.
 
 # Goals
 
-* Emulalate the NES.
+* Emulate the NES.
 * Be able to play most games.
-* Support Linux/Windows.
+* Support Linux/Windows/Web(WASM).
