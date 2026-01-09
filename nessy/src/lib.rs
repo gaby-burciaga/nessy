@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-use std::ops::{Add, Shl};
-
 const RAM_MEMORY_START: u16 = 0x0000;
 const RAM_MEMORY_END: u16 = 0x2000;
 const PRG_ROM_START: u16 = 0x8000;
