@@ -1,2 +1,5 @@
 /target
 .env
+.vscode
+# Moves binary from wls to windows, for later test.
+port.py

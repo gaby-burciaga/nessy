@@ -3,6 +3,8 @@ use crate::{
     cpu::instructions::{AddressingMode, INSTRUCTIONS},
 };
 
+use bitflags::bitflags;
+
 pub mod instructions;
 
 #[derive(Default)]
@@ -13,7 +15,29 @@ pub struct Cpu {
     x: u8,
     y: u8,
     /// N V _ B D I Z C
-    status: u8,
+    status: Status,
+}
+
+bitflags! {
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    struct Status: u8 {
+        /// Carry Flag.
+        const C = (1 >> 0);
+        /// Zero Flag.
+        const Z = (1 >> 1);
+        /// Interrupt Disable.
+        const I = (1 >> 2);
+        /// Decimal Mode Flag.
+        const D = (1 >> 3);
+        /// Break Command.
+        const B = (1 >> 4);
+        /// Unused.
+        const U = (1 >> 5);
+        /// Overflow Flag.
+        const V = (1 >> 6);
+        /// Negative Flag.
+        const N = (1 >> 7);
+    }
 }
 
 impl Cpu {
@@ -144,11 +168,7 @@ impl Cpu {
     }
 
     fn set_carry(&mut self, carry: bool) {
-        if carry {
-            self.status |= 1;
-        } else {
-            self.status &= !1;
-        }
+        self.status.set(Status::C, carry);
     }
 
     fn lda(&mut self, bus: &mut Bus, mode: AddressingMode) {
@@ -174,17 +194,8 @@ impl Cpu {
     }
 
     fn update_zero_and_negative_flags(&mut self, value: u8) {
-        if value == 0 {
-            self.status |= 0b0000_0010;
-        } else {
-            self.status &= 0b1111_1101;
-        }
-
-        if value & 0b1000_0000 != 0 {
-            self.status |= 0b1000_0000;
-        } else {
-            self.status &= 0b0111_1111;
-        }
+        self.status.set(Status::Z, value == 0);
+        self.status.set(Status::N, value & 0x80 != 0);
     }
 }
 
@@ -216,7 +227,7 @@ mod tests {
         cpu.interpret(&mut bus);
 
         assert_eq!(cpu.acc, 0x42);
-        assert_eq!(cpu.status & 0b0000_0010, 0); // Zero flag should be clear
-        assert_eq!(cpu.status & 0b1000_0000, 0); // Negative flag should be clear
+        assert!((cpu.status & Status::Z).is_empty()); // Zero flag should be clear
+        assert!((cpu.status & Status::N).is_empty()); // Negative flag should be clear
     }
 }
