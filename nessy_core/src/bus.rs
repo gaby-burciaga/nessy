@@ -1,22 +1,24 @@
 /// 2KiB of RAM.
-const RAM_MEMORY_SIZE: usize = 2048;
+pub const RAM_MEMORY_SIZE: usize = 2048;
 
-const RAM_MEMORY_START: u16 = 0x0000;
-const RAM_MEMORY_END: u16 = 0x2000;
-const PRG_ROM_START: u16 = 0x8000;
-const PRG_ROM_END: u16 = 0xFFFF;
+pub const RAM_MEMORY_START: u16 = 0x0000;
+pub const RAM_MEMORY_END: u16 = 0x2000;
+pub const PRG_ROM_START: u16 = 0x8000;
+pub const PRG_ROM_END: u16 = 0xFFFF;
 
+pub const RESET_VECTOR_ADDR: u16 = 0xFFFC;
+pub const INTERRUPT_VECTOR_ADDR: u16 = 0xFFFE;
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Bus {
     ram: Ram,
     prg_rom: Rom,
 }
 
 impl Bus {
-    pub fn new(prg_rom: Rom) -> Self {
-        Bus {
-            ram: Ram::default(),
-            prg_rom,
-        }
+    pub fn load(&mut self, prg_rom: Rom) {
+        self.prg_rom = prg_rom;
+        self.write_u16(RESET_VECTOR_ADDR, 0x8000);
     }
 
     pub fn read_u16(&self, addr: u16) -> u16 {
@@ -34,19 +36,20 @@ impl Bus {
     pub fn read_u8(&self, addr: u16) -> u8 {
         match addr {
             RAM_MEMORY_START..RAM_MEMORY_END => self.ram.read_u8(addr),
-            PRG_ROM_START..=PRG_ROM_END => self.prg_rom.read_u8(addr - 0x8000),
+            PRG_ROM_START..=PRG_ROM_END => self.prg_rom.read_u8(addr - PRG_ROM_START),
             _ => 0,
         }
     }
 
     pub fn write_u8(&mut self, addr: u16, value: u8) {
         match addr {
-            0x0000..0x2000 => self.ram.write_u8(addr, value),
+            RAM_MEMORY_START..RAM_MEMORY_END => self.ram.write_u8(addr, value),
             _ => {}
         }
     }
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rom {
     data: Vec<u8>,
 }
@@ -62,6 +65,7 @@ impl Rom {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Ram {
     data: [u8; RAM_MEMORY_SIZE],
 }
