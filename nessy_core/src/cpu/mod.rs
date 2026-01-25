@@ -69,7 +69,6 @@ impl Cpu {
         self.pc += 1;
 
         let instruction = &INSTRUCTIONS[opscode as usize];
-        dbg!("Executing instruction: {:02X?}", opscode);
         (instruction.exec)(self, bus, instruction.mode);
     }
 
