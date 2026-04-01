@@ -1,3 +1,3 @@
 [workspace]
 resolver = "3"
-members = ["nessy", "nessy_core"]
+members = ["nessy", "nessy_core", "xtask"]
