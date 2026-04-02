@@ -1,29 +1,25 @@
-pub fn start() {
-    #[cfg(target_family = "wasm")]
-    start_web();
+mod app;
 
-    #[cfg(not(target_family = "wasm"))]
-    start_native();
-}
+use app::NessyApp;
 
 #[cfg(not(target_family = "wasm"))]
-fn start_native() {
+pub fn start() {
     let options = eframe::NativeOptions::default();
-
     eframe::run_native("Nessy", options, Box::new(|_cc| Ok(Box::new(NessyApp {})))).unwrap();
 }
 
 #[cfg(target_family = "wasm")]
-fn start_web() {
+pub fn start() {
     use eframe::wasm_bindgen::JsCast as _;
 
     let web_options = eframe::WebOptions::default();
 
-    wasm_bindgen_futures::spawn_local(async {
+    wasm_bindgen_futures::spawn_local(async move {
         let doc = web_sys::window()
             .expect("No window")
             .document()
             .expect("No document");
+
         let canvas = doc
             .get_element_by_id("the_canvas_id")
             .expect("No canvas")
@@ -52,12 +48,4 @@ fn start_web() {
             }
         }
     });
-}
-
-struct NessyApp {}
-
-impl eframe::App for NessyApp {
-    fn ui(&mut self, ui: &mut eframe::egui::Ui, _frame: &mut eframe::Frame) {
-        ui.label("Hello nessy");
-    }
 }
