@@ -63,7 +63,7 @@ pub static INSTRUCTIONS: [Instruction; 256] = {
     table[0x14] = Instruction::nop();
     table[0x15] = Instruction {
         exec: Cpu::ora,
-        mode: AddressingMode::ZeroPage,
+        mode: AddressingMode::ZeroPageX,
     };
     table[0x16] = Instruction {
         exec: Cpu::asl,
@@ -268,7 +268,7 @@ pub static INSTRUCTIONS: [Instruction; 256] = {
     table[0x5F] = Instruction::nop();
     table[0x60] = Instruction {
         exec: Cpu::rts,
-        mode: AddressingMode::AbsoluteX,
+        mode: AddressingMode::Implied,
     };
     table[0x61] = Instruction {
         exec: Cpu::adc,
@@ -474,7 +474,7 @@ pub static INSTRUCTIONS: [Instruction; 256] = {
     };
     table[0xAA] = Instruction {
         exec: Cpu::tax,
-        mode: AddressingMode::Immediate,
+        mode: AddressingMode::Implied,
     };
     table[0xAB] = Instruction::nop();
     table[0xAC] = Instruction {

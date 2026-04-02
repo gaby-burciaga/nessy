@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::{
     bus::{Bus, INTERRUPT_VECTOR_ADDR, RESET_VECTOR_ADDR},
     cpu::instructions::{AddressingMode, INSTRUCTIONS},
@@ -65,10 +63,12 @@ impl Default for Cpu {
 impl Cpu {
     /// Executes a single CPU step (fetch-decode-execute cycle).
     pub fn step(&mut self, bus: &mut Bus) {
-        let opscode = bus.read_u8(self.pc);
+        // TODO: Add CPU cycle counting.
+
+        let opcode = bus.read_u8(self.pc);
         self.pc += 1;
 
-        let instruction = &INSTRUCTIONS[opscode as usize];
+        let instruction = &INSTRUCTIONS[opcode as usize];
         (instruction.exec)(self, bus, instruction.mode);
     }
 
@@ -82,65 +82,52 @@ impl Cpu {
         self.status = Status::from_bits_truncate(0b100100);
     }
 
-    pub fn load(&mut self, bus: &mut Bus) {
-        self.pc = bus.read_u16(RESET_VECTOR_ADDR);
-        self.reset(bus);
-    }
-
     fn get_operand_address(&mut self, bus: &mut Bus, mode: AddressingMode) -> u16 {
         match mode {
-            AddressingMode::Immediate | AddressingMode::Accumulator => {
+            AddressingMode::Immediate => {
                 let addr = self.pc;
                 self.pc += 1;
                 addr
             }
+            AddressingMode::Accumulator => panic!("Instruction should not request addr"),
             AddressingMode::ZeroPage => {
-                let addr = bus.read_u8(self.pc) as u16;
-                self.pc += 1;
+                let addr = self.fetch_u8(bus) as u16;
                 addr
             }
             AddressingMode::ZeroPageX => {
-                let addr = bus.read_u8(self.pc) as u16;
-                self.pc += 1;
+                let addr = self.fetch_u8(bus) as u16;
                 wrap_zero_page(addr.wrapping_add(self.x as u16))
             }
             AddressingMode::ZeroPageY => {
-                let addr = bus.read_u8(self.pc) as u16;
-                self.pc += 1;
+                let addr = self.fetch_u8(bus) as u16;
                 wrap_zero_page(addr.wrapping_add(self.y as u16))
             }
             AddressingMode::Relative => {
-                let offset = bus.read_u8(self.pc) as i8;
-                self.pc += 1;
-
+                let offset = self.fetch_u8(bus) as i8;
                 (self.pc as i32 + offset as i32) as u16
             }
             AddressingMode::Absolute => {
-                let addr = bus.read_u16(self.pc);
-                self.pc += 2;
+                let addr = self.fetch_u16(bus);
                 addr
             }
             AddressingMode::AbsoluteX => {
-                let addr = bus.read_u16(self.pc);
-                self.pc += 2;
+                let addr = self.fetch_u16(bus);
                 addr.wrapping_add(self.x as u16)
             }
             AddressingMode::AbsoluteY => {
-                let addr = bus.read_u16(self.pc);
-                self.pc += 2;
+                let addr = self.fetch_u16(bus);
                 addr.wrapping_add(self.y as u16)
             }
             AddressingMode::Indirect => {
                 // Reproducing JMP $xxFF bug by wrapping around the page
-                let ptr = bus.read_u16(self.pc);
-                self.pc += 2;
+                let ptr = self.fetch_u16(bus);
+
                 let lo = bus.read_u8(ptr);
                 let hi = bus.read_u8(wrap_around_page(ptr));
                 u16::from_le_bytes([lo, hi])
             }
             AddressingMode::IndirectX => {
-                let addr = bus.read_u8(self.pc);
-                self.pc += 1;
+                let addr = self.fetch_u8(bus);
 
                 let ptr = addr.wrapping_add(self.x);
                 let lo = bus.read_u8(ptr as u16);
@@ -149,8 +136,7 @@ impl Cpu {
                 u16::from_le_bytes([lo, hi])
             }
             AddressingMode::IndirectY => {
-                let addr = bus.read_u8(self.pc);
-                self.pc += 1;
+                let addr = self.fetch_u8(bus);
 
                 let lo = bus.read_u8(addr as u16);
                 let hi = bus.read_u8(addr.wrapping_add(1) as u16);
@@ -160,6 +146,20 @@ impl Cpu {
             }
             AddressingMode::Implied => panic!("Instruction should not request addr"),
         }
+    }
+
+    /// Fetches an 8-bit value from the bus and increments the program counter by 1.
+    fn fetch_u8(&mut self, bus: &mut Bus) -> u8 {
+        let addr = bus.read_u8(self.pc);
+        self.pc += 1;
+        addr
+    }
+
+    /// Fetches a 16-bit value from the bus and increments the program counter by 2.
+    fn fetch_u16(&mut self, bus: &mut Bus) -> u16 {
+        let addr = bus.read_u16(self.pc);
+        self.pc += 2;
+        addr
     }
 
     /// Force Break.
