@@ -1,3 +1,3 @@
 fn main() {
-    println!("Hello, Nessy!");
+    nessy_gui::start();
 }
