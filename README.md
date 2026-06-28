@@ -2,6 +2,22 @@
 
 Yet another NES emulator.
 
+# Run
+
+Native:
+
+```sh
+cargo run --release
+```
+
+Web (from repository root directory): You need to install trunk.
+
+```sh
+cargo install --locked trunk
+cd nessy
+trunk serve
+```
+
 # Goals
 
 * Emulate the NES.

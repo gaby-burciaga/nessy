@@ -4,8 +4,16 @@ use app::NessyApp;
 
 #[cfg(not(target_family = "wasm"))]
 pub fn start() {
-    let options = eframe::NativeOptions::default();
-    eframe::run_native("Nessy", options, Box::new(|_cc| Ok(Box::new(NessyApp {})))).unwrap();
+    let options = eframe::NativeOptions {
+        viewport: eframe::egui::ViewportBuilder::default().with_maximized(true),
+        ..Default::default()
+    };
+    eframe::run_native(
+        "Nessy",
+        options,
+        Box::new(|_cc| Ok(Box::new(NessyApp::default()))),
+    )
+    .unwrap();
 }
 
 #[cfg(target_family = "wasm")]
@@ -30,7 +38,7 @@ pub fn start() {
             .start(
                 canvas,
                 web_options,
-                Box::new(|_cc| Ok(Box::new(NessyApp {}))),
+                Box::new(|_cc| Ok(Box::new(NessyApp::default()))),
             )
             .await;
 

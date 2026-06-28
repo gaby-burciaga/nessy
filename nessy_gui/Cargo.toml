@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 eframe = "0.34.1"
 rfd = "0.17.2"
+nessy_core = { path = "../nessy_core" }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 wasm-bindgen-futures = "0.4.67"

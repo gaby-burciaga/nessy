@@ -8,6 +8,17 @@ use bitflags::bitflags;
 pub mod instructions;
 
 const STACK_RESET: u8 = 0xFD;
+const INIT_STATUS: Status = Status::from_bits_truncate(0b100100);
+
+pub struct CpuRegisters {
+    pub pc: u16,
+    pub sp: u8,
+    pub acc: u8,
+    pub x: u8,
+    pub y: u8,
+    pub status: u8,
+    pub cycles: u64,
+}
 
 pub struct Cpu {
     /// Program Counter.
@@ -22,6 +33,8 @@ pub struct Cpu {
     y: u8,
     /// N V _ B D I Z C
     status: Status,
+    /// Total cycles executed by the CPU.
+    cycles: u64,
 }
 
 bitflags! {
@@ -55,15 +68,30 @@ impl Default for Cpu {
             acc: 0,
             x: 0,
             y: 0,
-            status: Status::from_bits_truncate(0b100100),
+            status: INIT_STATUS,
+            cycles: 0,
         }
     }
 }
 
 impl Cpu {
+    /// Returns an snapshot of the current CPU registers.
+    pub fn registers(&self) -> CpuRegisters {
+        CpuRegisters {
+            pc: self.pc,
+            sp: self.sp,
+            acc: self.acc,
+            x: self.x,
+            y: self.y,
+            status: self.status.bits(),
+            cycles: self.cycles,
+        }
+    }
+
     /// Executes a single CPU step (fetch-decode-execute cycle).
     pub fn step(&mut self, bus: &mut Bus) {
-        // TODO: Add CPU cycle counting.
+        // TODO: Add CPU cycle counting per instruction.
+        self.cycles += 1;
 
         let opcode = bus.read_u8(self.pc);
         self.pc += 1;
@@ -79,7 +107,7 @@ impl Cpu {
 
         self.sp = STACK_RESET;
         self.pc = bus.read_u16(RESET_VECTOR_ADDR);
-        self.status = Status::from_bits_truncate(0b100100);
+        self.status = INIT_STATUS;
     }
 
     fn get_operand_address(&mut self, bus: &mut Bus, mode: AddressingMode) -> u16 {
@@ -525,7 +553,7 @@ impl Cpu {
         self.sp = self.x;
     }
 
-    /// Load Accumulator.
+    /// Load Y Register.
     fn ldy(&mut self, bus: &mut Bus, mode: AddressingMode) {
         let addr = self.get_operand_address(bus, mode);
         let value = bus.read_u8(addr);
@@ -533,7 +561,7 @@ impl Cpu {
         self.set_zn(self.y);
     }
 
-    /// Load X Register.
+    /// Load Accumulator.
     fn lda(&mut self, bus: &mut Bus, mode: AddressingMode) {
         let addr = self.get_operand_address(bus, mode);
         let value = bus.read_u8(addr);

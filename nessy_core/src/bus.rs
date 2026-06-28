@@ -19,6 +19,7 @@ pub const INTERRUPT_VECTOR_ADDR: u16 = 0xFFFE;
 pub struct Bus {
     ram: Ram,
     cartridge: Cartridge,
+    ppu_registers: [u8; 8],
 }
 
 // TODO: Use proper logging instead of eprintln!
@@ -28,17 +29,24 @@ impl Bus {
         Bus {
             ram: Ram::default(),
             cartridge,
+            ppu_registers: [0; 8],
         }
     }
 
-    pub fn load(&mut self) {
+    #[cfg(test)]
+    pub fn load_test_rom(&mut self) {
         self.write_u16(RESET_VECTOR_ADDR, 0x8000);
     }
 
     pub fn read_u8(&self, addr: u16) -> u8 {
         match addr {
             RAM_MEMORY_START..RAM_MEMORY_END => self.ram.read_u8(addr),
-            PPU_REGISTERS_START..PPU_REGISTERS_END => todo!("PPU registers not implemented"),
+            PPU_REGISTERS_START..PPU_REGISTERS_END => {
+                // Stub: Returns the registers without any real side effects
+                // TODO: Implement PPU register reading.
+                let reg_index = (addr - PPU_REGISTERS_START) % 8;
+                self.ppu_registers[reg_index as usize]
+            },
             PRG_ROM_START..=PRG_ROM_END => {
                 self.cartridge.prg_read_u8(addr.wrapping_sub(PRG_ROM_START))
             }
@@ -55,7 +63,12 @@ impl Bus {
     pub fn write_u8(&mut self, addr: u16, value: u8) {
         match addr {
             RAM_MEMORY_START..RAM_MEMORY_END => self.ram.write_u8(addr, value),
-            PPU_REGISTERS_START..PPU_REGISTERS_END => todo!("PPU registers not implemented"),
+            PPU_REGISTERS_START..PPU_REGISTERS_END => {
+                // Stub: Writes to the registers without any real side effects
+                // TODO: Implement PPU register writing.
+                let reg_index = (addr - PPU_REGISTERS_START) % 8;
+                self.ppu_registers[reg_index as usize] = value;
+            }
             PRG_ROM_START..=PRG_ROM_END => {
                 #[cfg(debug_assertions)]
                 {

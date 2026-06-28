@@ -1845,6 +1845,7 @@ name = "nessy_gui"
 version = "0.1.0"
 dependencies = [
  "eframe",
+ "nessy_core",
  "rfd",
  "wasm-bindgen-futures",
  "web-sys",
