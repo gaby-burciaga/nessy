@@ -10,6 +10,8 @@ pub mod instructions;
 const STACK_RESET: u8 = 0xFD;
 const INIT_STATUS: Status = Status::from_bits_truncate(0b100100);
 
+const PAGE_MASK: u16 = 0xFF00;
+
 pub struct CpuRegisters {
     pub pc: u16,
     pub sp: u8,
@@ -90,13 +92,13 @@ impl Cpu {
 
     /// Executes a single CPU step (fetch-decode-execute cycle).
     pub fn step(&mut self, bus: &mut Bus) {
-        // TODO: Add CPU cycle counting per instruction.
-        self.cycles += 1;
-
         let opcode = bus.read_u8(self.pc);
         self.pc += 1;
 
         let instruction = &INSTRUCTIONS[opcode as usize];
+
+        self.cycles += instruction.cycles as u64;
+
         (instruction.exec)(self, bus, instruction.mode);
     }
 
@@ -110,41 +112,43 @@ impl Cpu {
         self.status = INIT_STATUS;
     }
 
-    fn get_operand_address(&mut self, bus: &mut Bus, mode: AddressingMode) -> u16 {
+    fn get_operand_address(&mut self, bus: &mut Bus, mode: AddressingMode) -> (u16, bool) {
         match mode {
             AddressingMode::Immediate => {
                 let addr = self.pc;
                 self.pc += 1;
-                addr
+                (addr, false)
             }
             AddressingMode::Accumulator => panic!("Instruction should not request addr"),
             AddressingMode::ZeroPage => {
                 let addr = self.fetch_u8(bus) as u16;
-                addr
+                (addr, false)
             }
             AddressingMode::ZeroPageX => {
                 let addr = self.fetch_u8(bus) as u16;
-                wrap_zero_page(addr.wrapping_add(self.x as u16))
+                (wrap_zero_page(addr.wrapping_add(self.x as u16)), false)
             }
             AddressingMode::ZeroPageY => {
                 let addr = self.fetch_u8(bus) as u16;
-                wrap_zero_page(addr.wrapping_add(self.y as u16))
+                (wrap_zero_page(addr.wrapping_add(self.y as u16)), false)
             }
             AddressingMode::Relative => {
                 let offset = self.fetch_u8(bus) as i8;
-                (self.pc as i32 + offset as i32) as u16
+                ((self.pc as i32 + offset as i32) as u16, false)
             }
             AddressingMode::Absolute => {
                 let addr = self.fetch_u16(bus);
-                addr
+                (addr, false)
             }
             AddressingMode::AbsoluteX => {
                 let addr = self.fetch_u16(bus);
-                addr.wrapping_add(self.x as u16)
+                let effective = addr.wrapping_add(self.x as u16);
+                (effective, !same_page(addr, effective))
             }
             AddressingMode::AbsoluteY => {
                 let addr = self.fetch_u16(bus);
-                addr.wrapping_add(self.y as u16)
+                let effective = addr.wrapping_add(self.y as u16);
+                (effective, !same_page(addr, effective))
             }
             AddressingMode::Indirect => {
                 // Reproducing JMP $xxFF bug by wrapping around the page
@@ -152,7 +156,7 @@ impl Cpu {
 
                 let lo = bus.read_u8(ptr);
                 let hi = bus.read_u8(wrap_around_page(ptr));
-                u16::from_le_bytes([lo, hi])
+                (u16::from_le_bytes([lo, hi]), false)
             }
             AddressingMode::IndirectX => {
                 let addr = self.fetch_u8(bus);
@@ -161,7 +165,7 @@ impl Cpu {
                 let lo = bus.read_u8(ptr as u16);
                 let hi = bus.read_u8(ptr.wrapping_add(1) as u16);
 
-                u16::from_le_bytes([lo, hi])
+                (u16::from_le_bytes([lo, hi]), false)
             }
             AddressingMode::IndirectY => {
                 let addr = self.fetch_u8(bus);
@@ -170,7 +174,9 @@ impl Cpu {
                 let hi = bus.read_u8(addr.wrapping_add(1) as u16);
                 let ptr = u16::from_le_bytes([lo, hi]);
 
-                ptr.wrapping_add(self.y as u16)
+                let effective = ptr.wrapping_add(self.y as u16);
+
+                (effective, !same_page(ptr, effective))
             }
             AddressingMode::Implied => panic!("Instruction should not request addr"),
         }
@@ -207,7 +213,10 @@ impl Cpu {
 
     /// Logical Inclusive OR.
     fn ora(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
+        if page_crossed {
+            self.cycles += 1;
+        }
         let value = bus.read_u8(addr);
         self.acc |= value;
         self.set_zn(self.acc);
@@ -222,7 +231,7 @@ impl Cpu {
                 (self.acc, carry)
             }
             _ => {
-                let addr = self.get_operand_address(bus, mode);
+                let (addr, _) = self.get_operand_address(bus, mode);
                 let mut value = bus.read_u8(addr);
 
                 let carry = value & (1 << 7) != 0;
@@ -247,10 +256,14 @@ impl Cpu {
 
     /// Branch If Plus.
     fn bpl(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
 
         if !self.status.contains(Status::N) {
             self.pc = addr;
+            self.cycles += 1;
+            if page_crossed {
+                self.cycles += 1;
+            }
         }
     }
 
@@ -261,7 +274,7 @@ impl Cpu {
 
     /// Jump to Subroutine.
     fn jsr(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, _) = self.get_operand_address(bus, mode);
         let return_addr = self.pc.wrapping_sub(1);
         let [lo, hi] = return_addr.to_le_bytes();
         self.push(bus, hi);
@@ -271,7 +284,10 @@ impl Cpu {
 
     /// Logical AND.
     fn and(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
+        if page_crossed {
+            self.cycles += 1;
+        }
         let value = bus.read_u8(addr);
         self.acc &= value;
         self.set_zn(self.acc);
@@ -279,7 +295,7 @@ impl Cpu {
 
     /// Bit Test.
     fn bit(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, _) = self.get_operand_address(bus, mode);
         let value = bus.read_u8(addr);
 
         let result = self.acc & value;
@@ -299,7 +315,7 @@ impl Cpu {
                 (r, carry)
             }
             _ => {
-                let addr = self.get_operand_address(bus, mode);
+                let (addr, _) = self.get_operand_address(bus, mode);
                 let value = bus.read_u8(addr);
 
                 let (r, carry) = self._rol(value);
@@ -330,10 +346,14 @@ impl Cpu {
 
     /// Branch on Minus.
     fn bmi(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
 
         if self.status.contains(Status::N) {
             self.pc = addr;
+            self.cycles += 1;
+            if page_crossed {
+                self.cycles += 1;
+            }
         }
     }
 
@@ -356,7 +376,10 @@ impl Cpu {
 
     /// Exclusive OR.
     fn eor(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
+        if page_crossed {
+            self.cycles += 1;
+        }
         let value = bus.read_u8(addr);
         self.acc ^= value;
         self.set_zn(self.acc);
@@ -371,7 +394,7 @@ impl Cpu {
                 (r, carry)
             }
             _ => {
-                let addr = self.get_operand_address(bus, mode);
+                let (addr, _) = self.get_operand_address(bus, mode);
                 let value = bus.read_u8(addr);
                 let (result, carry) = self._lsr(value);
 
@@ -397,10 +420,14 @@ impl Cpu {
 
     /// Branch If Overflow Clear.
     fn bvc(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
 
         if !self.status.contains(Status::V) {
             self.pc = addr;
+            self.cycles += 1;
+            if page_crossed {
+                self.cycles += 1;
+            }
         }
     }
 
@@ -419,7 +446,10 @@ impl Cpu {
 
     /// Add with Carry.
     fn adc(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
+        if page_crossed {
+            self.cycles += 1;
+        }
         let value = bus.read_u8(addr);
         self._adc(value);
     }
@@ -455,7 +485,7 @@ impl Cpu {
                 (r, carry)
             }
             _ => {
-                let addr = self.get_operand_address(bus, mode);
+                let (addr, _) = self.get_operand_address(bus, mode);
                 let value = bus.read_u8(addr);
 
                 let (r, carry) = self._ror(value);
@@ -485,16 +515,20 @@ impl Cpu {
 
     /// Jump to Address.
     fn jmp(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, _) = self.get_operand_address(bus, mode);
         self.pc = addr;
     }
 
     /// Branch If Overflow Clear.
     fn bvs(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
 
         if self.status.contains(Status::V) {
             self.pc = addr;
+            self.cycles += 1;
+            if page_crossed {
+                self.cycles += 1;
+            }
         }
     }
 
@@ -505,19 +539,19 @@ impl Cpu {
 
     /// Store Accumulator.
     fn sta(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, _) = self.get_operand_address(bus, mode);
         bus.write_u8(addr, self.acc);
     }
 
     /// Store Y Register.
     fn sty(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, _) = self.get_operand_address(bus, mode);
         bus.write_u8(addr, self.y);
     }
 
     /// Store X Register.
     fn stx(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, _) = self.get_operand_address(bus, mode);
         bus.write_u8(addr, self.x);
     }
 
@@ -535,10 +569,14 @@ impl Cpu {
 
     /// Branch If Carry Clear.
     fn bcc(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
 
         if !self.status.contains(Status::C) {
             self.pc = addr;
+            self.cycles += 1;
+            if page_crossed {
+                self.cycles += 1;
+            }
         }
     }
 
@@ -555,7 +593,10 @@ impl Cpu {
 
     /// Load Y Register.
     fn ldy(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
+        if page_crossed {
+            self.cycles += 1;
+        }
         let value = bus.read_u8(addr);
         self.y = value;
         self.set_zn(self.y);
@@ -563,7 +604,10 @@ impl Cpu {
 
     /// Load Accumulator.
     fn lda(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
+        if page_crossed {
+            self.cycles += 1;
+        }
         let value = bus.read_u8(addr);
         self.acc = value;
         self.set_zn(self.acc);
@@ -571,7 +615,10 @@ impl Cpu {
 
     /// Load X Register.
     fn ldx(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
+        if page_crossed {
+            self.cycles += 1;
+        }
         let value = bus.read_u8(addr);
         self.x = value;
         self.set_zn(self.x);
@@ -591,23 +638,34 @@ impl Cpu {
 
     /// Branch If Carry Set.
     fn bcs(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
 
         if self.status.contains(Status::C) {
             self.pc = addr;
+            self.cycles += 1;
+            if page_crossed {
+                self.cycles += 1;
+            }
         }
     }
 
     /// Subtract with Carry.
     fn sbc(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
+        if page_crossed {
+            self.cycles += 1;
+        }
         let value = bus.read_u8(addr);
         self._adc(!value);
     }
 
     /// Compare Accumulator.
     fn cmp(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
+        if page_crossed {
+            self.cycles += 1;
+        }
+
         let value = bus.read_u8(addr);
 
         let result = self.acc.wrapping_sub(value);
@@ -628,7 +686,7 @@ impl Cpu {
 
     /// Compare Y Register.
     fn cpy(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, _) = self.get_operand_address(bus, mode);
         let value = bus.read_u8(addr);
 
         let result = self.y.wrapping_sub(value);
@@ -638,7 +696,7 @@ impl Cpu {
 
     /// Decrement Memory.
     fn dec(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, _) = self.get_operand_address(bus, mode);
         let value = bus.read_u8(addr);
 
         let result = value.wrapping_sub(1);
@@ -660,10 +718,14 @@ impl Cpu {
 
     /// Branch If Not Equal (Zero).
     fn bne(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
 
         if !self.status.contains(Status::Z) {
             self.pc = addr;
+            self.cycles += 1;
+            if page_crossed {
+                self.cycles += 1;
+            }
         }
     }
 
@@ -674,7 +736,7 @@ impl Cpu {
 
     /// Compare X Register.
     fn cpx(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, _) = self.get_operand_address(bus, mode);
         let value = bus.read_u8(addr);
 
         let result = self.x.wrapping_sub(value);
@@ -690,7 +752,7 @@ impl Cpu {
 
     /// Increment Memory.
     fn inc(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, _) = self.get_operand_address(bus, mode);
         let value = bus.read_u8(addr);
 
         let result = value.wrapping_add(1);
@@ -700,10 +762,14 @@ impl Cpu {
 
     /// Branch on Result Zero (Equal).
     fn beq(&mut self, bus: &mut Bus, mode: AddressingMode) {
-        let addr = self.get_operand_address(bus, mode);
+        let (addr, page_crossed) = self.get_operand_address(bus, mode);
 
         if self.status.contains(Status::Z) {
             self.pc = addr;
+            self.cycles += 1;
+            if page_crossed {
+                self.cycles += 1;
+            }
         }
     }
 
@@ -732,10 +798,19 @@ fn wrap_zero_page(addr: u16) -> u16 {
     addr & 0x00FF
 }
 
+/// Increments `addr` keeping it in the same page.
+/// This reproduces the NMOS 6502's bug where the high byte of the ptr
+/// does not increment when crossing the page boundary.
+/// E.g: $01FF -> $0100 instead of $0200.
 fn wrap_around_page(addr: u16) -> u16 {
-    let page = addr & 0xFF00;
+    let page = addr & PAGE_MASK;
     let offset = (addr + 1) & 0x00FF;
     page | offset
+}
+
+#[inline]
+fn same_page(p1: u16, p2: u16) -> bool {
+    p1 & PAGE_MASK == p2 & PAGE_MASK
 }
 
 // TODO: Test addressing modes and instructions more thoroughly.
