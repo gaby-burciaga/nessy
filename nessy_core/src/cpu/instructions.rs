@@ -841,8 +841,11 @@ pub static INSTRUCTIONS: [Instruction; 256] = {
         cycles: 6,
     };
     table[0xF7] = Instruction::nop();
-    // SED, not implemented in NES
-    table[0xF8] = Instruction::nop();
+    table[0xF8] = Instruction {
+        exec: Cpu::sed,
+        mode: AddressingMode::Implied,
+        cycles: 2,
+    };
     table[0xF9] = Instruction {
         exec: Cpu::sbc,
         mode: AddressingMode::AbsoluteY,
