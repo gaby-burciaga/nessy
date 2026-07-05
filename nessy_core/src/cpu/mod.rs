@@ -77,6 +77,18 @@ impl Default for Cpu {
 }
 
 impl Cpu {
+    /// Executes a single CPU step (fetch-decode-execute cycle).
+    pub fn step(&mut self, bus: &mut Bus) {
+        let opcode = bus.read_u8(self.pc);
+        self.pc += 1;
+
+        let instruction = &INSTRUCTIONS[opcode as usize];
+
+        self.cycles += instruction.cycles as u64;
+
+        (instruction.exec)(self, bus, instruction.mode);
+    }
+
     /// Returns an snapshot of the current CPU registers.
     pub fn registers(&self) -> CpuRegisters {
         CpuRegisters {
@@ -90,16 +102,8 @@ impl Cpu {
         }
     }
 
-    /// Executes a single CPU step (fetch-decode-execute cycle).
-    pub fn step(&mut self, bus: &mut Bus) {
-        let opcode = bus.read_u8(self.pc);
-        self.pc += 1;
-
-        let instruction = &INSTRUCTIONS[opcode as usize];
-
-        self.cycles += instruction.cycles as u64;
-
-        (instruction.exec)(self, bus, instruction.mode);
+    pub fn set_pc(&mut self, pc: u16) {
+        self.pc = pc;
     }
 
     pub fn reset(&mut self, bus: &mut Bus) {
@@ -184,16 +188,16 @@ impl Cpu {
 
     /// Fetches an 8-bit value from the bus and increments the program counter by 1.
     fn fetch_u8(&mut self, bus: &mut Bus) -> u8 {
-        let addr = bus.read_u8(self.pc);
+        let value = bus.read_u8(self.pc);
         self.pc += 1;
-        addr
+        value
     }
 
     /// Fetches a 16-bit value from the bus and increments the program counter by 2.
     fn fetch_u16(&mut self, bus: &mut Bus) -> u16 {
-        let addr = bus.read_u16(self.pc);
+        let value = bus.read_u16(self.pc);
         self.pc += 2;
-        addr
+        value
     }
 
     /// Force Break.
@@ -209,6 +213,14 @@ impl Cpu {
         self.status.insert(Status::I);
 
         self.pc = bus.read_u16(INTERRUPT_VECTOR_ADDR);
+    }
+
+    fn nmi(&mut self, _bus: &mut Bus) {
+        todo!()
+    }
+
+    fn irq(&mut self, _bus: &mut Bus) {
+        todo!();
     }
 
     /// Logical Inclusive OR.
@@ -771,6 +783,10 @@ impl Cpu {
                 self.cycles += 1;
             }
         }
+    }
+
+    fn sed(&mut self, _bus: &mut Bus, _mode: AddressingMode) {
+        self.status.insert(Status::D);
     }
 
     /// Pushes a byte onto the stack.

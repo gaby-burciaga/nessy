@@ -902,3 +902,22 @@ pub enum AddressingMode {
     IndirectX,
     IndirectY,
 }
+
+impl AddressingMode {
+    pub const fn operand_len(&self) -> u8 {
+        match self {
+            AddressingMode::Implied | AddressingMode::Accumulator => 0,
+            AddressingMode::Immediate
+            | AddressingMode::ZeroPage
+            | AddressingMode::ZeroPageX
+            | AddressingMode::ZeroPageY
+            | AddressingMode::Relative
+            | AddressingMode::IndirectX
+            | AddressingMode::IndirectY => 1,
+            AddressingMode::Absolute
+            | AddressingMode::AbsoluteX
+            | AddressingMode::AbsoluteY
+            | AddressingMode::Indirect => 2,
+        }
+    }
+}

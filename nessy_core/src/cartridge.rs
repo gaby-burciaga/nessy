@@ -1,5 +1,3 @@
-use std::{fs, path::Path};
-
 use crate::bus::Rom;
 
 /// 16 KiB
@@ -18,9 +16,9 @@ pub struct Cartridge {
 }
 
 impl Cartridge {
-    pub fn from_raw(data: &[u8]) -> Self {
-        check_nes_tag(&data);
-        check_ines_version(&data);
+    pub fn from_raw(data: &[u8]) -> Result<Self, CartridgeError> {
+        check_nes_tag(&data)?;
+        check_ines_version(&data)?;
 
         let prg_rom_size = data[4] as usize * PRG_PAGE_SIZE;
         let chr_rom_size = data[5] as usize * CHR_PAGE_SIZE;
@@ -43,7 +41,7 @@ impl Cartridge {
         let prg_rom_start = 16 + if skip_trainer { 512 } else { 0 };
         let chr_rom_start = prg_rom_start + prg_rom_size;
 
-        Cartridge {
+        Ok(Cartridge {
             prg_rom: Rom::new(
                 data[prg_rom_start..prg_rom_start + prg_rom_size]
                     .to_vec()
@@ -56,12 +54,7 @@ impl Cartridge {
             ),
             mapper_type,
             screen_mirrowing,
-        }
-    }
-
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Self {
-        let data = fs::read(path).expect("Cartridge file");
-        Self::from_raw(&data)
+        })
     }
 
     pub fn prg_read_u8(&self, addr: u16) -> u8 {
@@ -69,8 +62,18 @@ impl Cartridge {
     }
 
     pub fn chr_read_u8(&self, _addr: u16) -> u8 {
-        todo!()
+        self.chr_rom.read_u8(_addr % self.chr_rom.len() as u16)
     }
+}
+
+#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CartridgeError {
+    #[error("invalid NES file format: {0}")]
+    InvalidFormat(String),
+    #[error("iNES format not supported: header indicates {0} bytes but file has {1} bytes")]
+    TruncatedFile(usize, usize),
+    #[error("mapper {0} not implemented")]
+    UnsupportedMapper(u8),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -80,11 +83,24 @@ pub enum ScreenMirrowing {
     FourScreen,
 }
 
-fn check_nes_tag(data: &[u8]) {
-    assert!(&data[0..4] == NES_TAG, "Invalid NES file: Missing NES tag");
+fn check_nes_tag(data: &[u8]) -> Result<(), CartridgeError> {
+    if &data[0..4] != NES_TAG {
+        Err(CartridgeError::InvalidFormat(
+            "Invalid NES file: Missing NES tag".into(),
+        ))
+    } else {
+        Ok(())
+    }
 }
 
-fn check_ines_version(data: &[u8]) {
+fn check_ines_version(data: &[u8]) -> Result<(), CartridgeError> {
     let ines_ver = data[7] >> 2 & 0x03;
-    assert!(ines_ver == 0, "Only iNES format version 0 is supported");
+
+    if ines_ver != 0 {
+        Err(CartridgeError::InvalidFormat(
+            "Only iNES format version 0 is supported".into(),
+        ))
+    } else {
+        Ok(())
+    }
 }

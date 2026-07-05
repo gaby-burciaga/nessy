@@ -14,6 +14,7 @@ pub const PRG_ROM_END: u16 = 0xFFFF;
 
 pub const RESET_VECTOR_ADDR: u16 = 0xFFFC;
 pub const INTERRUPT_VECTOR_ADDR: u16 = 0xFFFE;
+pub const NMI_VECTOR_ADDR: u16 = 0xFFFA;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Bus {
@@ -46,7 +47,7 @@ impl Bus {
                 // TODO: Implement PPU register reading.
                 let reg_index = (addr - PPU_REGISTERS_START) % 8;
                 self.ppu_registers[reg_index as usize]
-            },
+            }
             PRG_ROM_START..=PRG_ROM_END => {
                 self.cartridge.prg_read_u8(addr.wrapping_sub(PRG_ROM_START))
             }

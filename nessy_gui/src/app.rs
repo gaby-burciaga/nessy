@@ -91,15 +91,15 @@ impl NessyApp {
 
         // TODO: Implement proper error handling for cartridge loading. For now, we catch any panics that may occur during the loading process.
 
-        let res = std::panic::catch_unwind(|| Cartridge::from_raw(&bytes));
+        let res = Cartridge::from_raw(&bytes);
 
         match res {
             Ok(cartridge) => {
                 self.state = Some(EmulatorState::new(cartridge));
                 self.running = true;
             }
-            Err(_) => {
-                self.error = Some(format!("Failed to load ROM from bytes"));
+            Err(e) => {
+                self.error = Some(format!("Failed to load ROM from bytes: {}", e));
             }
         }
     }
