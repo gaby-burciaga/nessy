@@ -6,6 +6,7 @@ use crate::{
 use bitflags::bitflags;
 
 pub mod instructions;
+pub mod log;
 
 const STACK_RESET: u8 = 0xFD;
 const INIT_STATUS: Status = Status::from_bits_truncate(0b100100);
